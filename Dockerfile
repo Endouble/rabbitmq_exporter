@@ -36,7 +36,6 @@ RUN CGO_ENABLED=0 go build \
         -X main.BuildDate=$(date -u ""+%Y%m%d-%H:%M:%S"")" \
     -o /app .
 
-
 # Final stage: the running container.
 FROM scratch AS final
 
@@ -60,5 +59,7 @@ EXPOSE 9419
 # Perform any further action as an unprivileged user.
 USER nobody:nobody
 
+# Check if exporter is alive; 10 retries gives prometheus some time to retrieve bad data (5 minutes)
+HEALTHCHECK --retries=10 CMD ["/app", "-check-url", "http://localhost:9419/health"]
 # Run the compiled binary.
 ENTRYPOINT ["/app"]

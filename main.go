@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"flag"
 	"net/http"
 	"os"
 	"strings"
@@ -30,7 +31,22 @@ func initLogger() {
 }
 
 func main() {
-	initConfig()
+	var checkURL = flag.String("check-url", "", "Curl url and return exit code (http: 200 => 0, otherwise 1)")
+	var configFile = flag.String("config-file", "conf/rabbitmq.conf", "path to json config")
+	flag.Parse()
+
+	if *checkURL != "" { // do a single http get request. Used in docker healthckecks as curl is not inside the image
+		curl(*checkURL)
+		return
+	}
+
+	err := initConfigFromFile(*configFile)                  //Try parsing config file
+	if _, isPathError := err.(*os.PathError); isPathError { // No file => use environment variables
+		initConfig()
+	} else if err != nil {
+		panic(err)
+	}
+
 	initLogger()
 	initClient()
 	exporter := newExporter()
@@ -77,6 +93,13 @@ func main() {
              </body>
              </html>`))
 	})
+	handler.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		if exporter.LastScrapeOK() {
+			w.WriteHeader(http.StatusOK)
+		} else {
+			w.WriteHeader(http.StatusGatewayTimeout)
+		}
+	})
 
 	server := &http.Server{Addr: config.PublishAddr + ":" + config.PublishPort, Handler: handler}
 
@@ -94,7 +117,6 @@ func main() {
 		log.Fatal(err)
 	}
 	cancel()
-
 }
 
 func getLogLevel() log.Level {
